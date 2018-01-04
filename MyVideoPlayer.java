@@ -55,9 +55,15 @@ public class MyVideoPlayer {
   }
   
   
+  public byte[] getCurrFrameByteData() {
+    return this.currFrameByteData;
+  }
+  
+  
   // Read the one frame from frames.
   public BufferedImage read() {
     byte[] frame = new byte[MyVideoPlayer.BYTES_PER_FRAME];
+    this.currFrameByteData = frame;
     BufferedImage image = new BufferedImage(MyVideoPlayer.IMAGE_WIDTH, MyVideoPlayer.IMAGE_HEIGHT, BufferedImage.TYPE_INT_RGB);
     try {
       this.rgbStream.read(frame);
@@ -65,9 +71,6 @@ public class MyVideoPlayer {
     } catch (IOException e) {
       e.printStackTrace();
     }
-
-    currFrameByteData = frame;
-
     int pixelPos = 0;
     for (int y = 0; y < image.getHeight(); y++) {
       for (int x = 0; x < image.getWidth(); x++) {
@@ -125,10 +128,6 @@ public class MyVideoPlayer {
     this.close();
     this.initialize();
     return this.skip(targetFrame);
-  }
-
-  public byte[] getCurrFrameByteData() {
-      return currFrameByteData;
   }
   
 }

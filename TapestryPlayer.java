@@ -1,7 +1,6 @@
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.*;
-import java.util.concurrent.TimeUnit;
 import javax.swing.*;
 
 
@@ -13,10 +12,14 @@ public class TapestryPlayer {
   public static final int DURATION_PER_FRAME_MSEC = 1000 / TapestryPlayer.FPS;
   public static final int VIDEO_LENGTH_SEC = 300;
   public static final double SCALING_FACTOR = 2.0;
-  // private final BufferedImage tapestry;
+  public static final int FIRST_STATUS = 1;
+  public static final int SECOND_STATUS = 2;
+  public static final int THIRD_STATUS = 3;
+
   private final MyAudioPlayer audio;
   private final MyVideoPlayer video;
-  private final MyTapestry tapestry;
+  private final boolean isSeamCarvingBlend;
+  private String videoPath;
   private long timeStamp;
   private int framesSent;
   private boolean isPlaying;
@@ -27,13 +30,19 @@ public class TapestryPlayer {
   private JPanel framePanel;
   private JPanel tapestryPanel;
   private JLabel frameLabel;
-  private JLabel tapestryLabel;
   private JButton buttonPlayOrPause;
   private JButton buttonStop;
-  
 
+  private MyTapestry topTapestry;
+  private MyTapestry midTapestry;
+  private MyTapestry bottomTapestry;
+  private JLabel[] tapestryLabel;
+  private BufferedImage topImage;
+  private BufferedImage midImage;
+  private BufferedImage bottomImage;
+
+  
   public static void main(String[] args) {
-    
     Arguments argObj = new Arguments(args);
     TapestryPlayer myPlayer = new TapestryPlayer(argObj);
     myPlayer.nonsense();
@@ -62,6 +71,10 @@ public class TapestryPlayer {
       if (TapestryPlayer.this.framesSent == 0) {
         missedFrames++;
       }
+      if (TapestryPlayer.this.video.getFramesRead() == TapestryPlayer.this.video.getTotalFrames()) {
+        TapestryPlayer.this.stop();
+        return;
+      }
       if (missedFrames < 1) {  // Current frame is already sent
         return;
       } else if (missedFrames < 2) {  // It's time to send current/next frame
@@ -72,7 +85,7 @@ public class TapestryPlayer {
         this.sendOneFrame();
         TapestryPlayer.this.framesSent += missedFrames;
       }
-      return;  // Update time stamp and return
+      return;
     }
     
     private void sendOneFrame() {
@@ -99,29 +112,166 @@ public class TapestryPlayer {
   }
   
   
-  private class ClickHandler implements MouseListener {
+  private class TopClickHandler implements MouseListener {
+    
     @Override
     public void mouseClicked(MouseEvent e) {
-      System.out.println("[DEBUG] Mouse clicked");
-      // TODO Auto-generated method stub
+      System.out.println("Position: x = " + e.getX() + ", y = " + e.getY());
+      if (e.getX() > TapestryPlayer.this.topImage.getWidth()) {
+        return;
+      }
+      double midTapestryDistanceThreshold;
+      int targetFrameIdx = TapestryPlayer.this.topTapestry.getFrameIdx(e.getX(), e.getY());
+      System.out.println("Level 1 zooming in...");
+      if (videoPath.toLowerCase().equals("disney.rgb")) {
+        midTapestryDistanceThreshold = 12.0;
+      } else {
+        midTapestryDistanceThreshold = 25.0;
+      }
+      if (targetFrameIdx < 250) {
+        TapestryPlayer.this.midTapestry.generateTapestry(0, targetFrameIdx + 250, midTapestryDistanceThreshold, 50);
+      } else if (targetFrameIdx > video.getTotalFrames() - 1 - 250) {
+        TapestryPlayer.this.midTapestry.generateTapestry(targetFrameIdx - 250, video.getTotalFrames() - 1, midTapestryDistanceThreshold, 50);
+      } else {
+        TapestryPlayer.this.midTapestry.generateTapestry(targetFrameIdx - 250, targetFrameIdx + 250, midTapestryDistanceThreshold, 50);
+      }
+      TapestryPlayer.this.midTapestry.blend(TapestryPlayer.this.isSeamCarvingBlend);
+      TapestryPlayer.this.midImage = TapestryPlayer.this.midTapestry.getTapestryImage();
+      TapestryPlayer.this.bottomImage = new BufferedImage(MyTapestry.KEYFRAME_WIDTH - 10, MyTapestry.KEYFRAME_HEIGHT, BufferedImage.TYPE_INT_RGB);
+      ImageIcon midIcon = new ImageIcon(TapestryPlayer.this.midImage);
+      ImageIcon bottomIcon = new ImageIcon(TapestryPlayer.this.bottomImage);
+      TapestryPlayer.this.tapestryLabel[1].setIcon(midIcon);
+      TapestryPlayer.this.tapestryLabel[1].revalidate();
+      TapestryPlayer.this.tapestryLabel[1].repaint();
+      TapestryPlayer.this.tapestryLabel[1].updateUI();
+      TapestryPlayer.this.tapestryLabel[2].setIcon(bottomIcon);
+      TapestryPlayer.this.tapestryLabel[2].revalidate();
+      TapestryPlayer.this.tapestryLabel[2].repaint();
+      TapestryPlayer.this.tapestryLabel[2].updateUI();
+      TapestryPlayer.this.tapestryPanel.revalidate();
+      TapestryPlayer.this.tapestryPanel.repaint();
       return;
     }
+    
     @Override
     public void mousePressed(MouseEvent e) {
       return;
     }
+    
     @Override
     public void mouseReleased(MouseEvent e) {
       return;
     }
+    
     @Override
     public void mouseEntered(MouseEvent e) {
       return;
     }
+    
     @Override
     public void mouseExited(MouseEvent e) {
       return;
     }
+    
+  }
+
+
+  private class MidClickHandler implements MouseListener {
+    
+    @Override
+    public void mouseClicked(MouseEvent e) {
+      System.out.println("Position: x = " + e.getX() + ", y = " + e.getY());
+      if (TapestryPlayer.this.midImage.getWidth() < MyTapestry.KEYFRAME_WIDTH || e.getX() > TapestryPlayer.this.midImage.getWidth()) {
+        return;
+      }
+      double bottomTapestryDistanceThreshold;
+      int targetFrameIdx = TapestryPlayer.this.midTapestry.getFrameIdx(e.getX(), e.getY());
+      System.out.println("Level 2 zooming in...");
+      if (videoPath.toLowerCase().equals("disney.rgb")) {
+        bottomTapestryDistanceThreshold = 9.0;
+      } else {
+        bottomTapestryDistanceThreshold = 23.0;
+      }
+      if (targetFrameIdx < 100) {
+        TapestryPlayer.this.bottomTapestry.generateTapestry(0, targetFrameIdx + 100, bottomTapestryDistanceThreshold, 20);
+      } else if (targetFrameIdx > video.getTotalFrames() - 1 - 200) {
+        TapestryPlayer.this.bottomTapestry.generateTapestry(targetFrameIdx - 100, video.getTotalFrames() - 1, bottomTapestryDistanceThreshold, 20);
+      } else {
+        TapestryPlayer.this.bottomTapestry.generateTapestry(targetFrameIdx - 100, targetFrameIdx + 100, bottomTapestryDistanceThreshold, 20);
+      }
+      TapestryPlayer.this.bottomTapestry.blend(TapestryPlayer.this.isSeamCarvingBlend);
+      TapestryPlayer.this.bottomImage = TapestryPlayer.this.bottomTapestry.getTapestryImage();
+      ImageIcon bottomIcon = new ImageIcon(TapestryPlayer.this.bottomImage);
+      TapestryPlayer.this.tapestryLabel[2].setIcon(bottomIcon);
+      TapestryPlayer.this.tapestryLabel[2].revalidate();
+      TapestryPlayer.this.tapestryLabel[2].repaint();
+      TapestryPlayer.this.tapestryLabel[2].updateUI();
+      TapestryPlayer.this.tapestryPanel.revalidate();
+      TapestryPlayer.this.tapestryPanel.repaint();
+      return;
+    }
+    
+    @Override
+    public void mousePressed(MouseEvent e) {
+      return;
+    }
+    
+    @Override
+    public void mouseReleased(MouseEvent e) {
+      return;
+    }
+    
+    @Override
+    public void mouseEntered(MouseEvent e) {
+      return;
+    }
+    
+    @Override
+    public void mouseExited(MouseEvent e) {
+      return;
+    }
+    
+  }
+  
+  
+  private class BottomClickHandler implements MouseListener {
+    
+    @Override
+    public void mouseClicked(MouseEvent e) {
+      System.out.println("Position: x = " + e.getX() + ", y = " + e.getY());
+      if (TapestryPlayer.this.bottomImage.getWidth() < MyTapestry.KEYFRAME_WIDTH || e.getX() > TapestryPlayer.this.bottomImage.getWidth()) {
+        return;
+      }
+      int targetFrameIdx = TapestryPlayer.this.bottomTapestry.getFrameIdx(e.getX(), e.getY());
+      if (TapestryPlayer.this.isPlaying) {
+        TapestryPlayer.this.skipTo(targetFrameIdx);
+      } else {
+        TapestryPlayer.this.playOrPause();
+        TapestryPlayer.this.skipTo(targetFrameIdx);
+      }
+      return;
+    }
+    
+    @Override
+    public void mousePressed(MouseEvent e) {
+      return;
+    }
+    
+    @Override
+    public void mouseReleased(MouseEvent e) {
+      return;
+    }
+    
+    @Override
+    public void mouseEntered(MouseEvent e) {
+      return;
+    }
+    
+    @Override
+    public void mouseExited(MouseEvent e) {
+      return;
+    }
+    
   }
   
   
@@ -130,12 +280,9 @@ public class TapestryPlayer {
     this.isPlaying = false;
     this.audio = new MyAudioPlayer(argObj.getAudioPath());
     this.video = new MyVideoPlayer(argObj.getVideoPath());
-    this.tapestry = new MyTapestry(argObj.getVideoPath());
-    this.tapestry.generateTapestry();
-    this.timer = new Timer(TapestryPlayer.REFRESH_RATE, this.new FrameUpdater());
-    
-    this.player = new JFrame("CSCI-576 MyTapestry Player: Shiyu He, Yihao Wang");
+
     GridBagLayout layout = new GridBagLayout();
+    this.player = new JFrame("CSCI-576 MyTapestry Player: Shiyu He, Yihao Wang");
     this.player.getContentPane().setLayout(layout);
     this.player.getContentPane().setBackground(new Color(25, 25, 25));
     
@@ -158,25 +305,62 @@ public class TapestryPlayer {
     audioLabel.setForeground(new Color(150, 150, 150));
     audioLabel.setHorizontalAlignment(SwingConstants.CENTER);
     audioLabel.setVerticalAlignment(SwingConstants.TOP);
-    /*
-    JLabel tapestryLabel = new JLabel("MyTapestry: " + argObj.getTapestryPath());
-    tapestryLabel.setFont(fontRegular);
-    tapestryLabel.setHorizontalAlignment(SwingConstants.CENTER);
-    tapestryLabel.setVerticalAlignment(SwingConstants.TOP);
-    */
     
+    this.timer = new Timer(TapestryPlayer.REFRESH_RATE, this.new FrameUpdater());
     this.currFrame = ImageUtility.generateBlank();
     ImageIcon blankIcon = TapestryPlayer.scaleIcon(new ImageIcon(this.currFrame), TapestryPlayer.SCALING_FACTOR);
+    
     this.frameLabel = new JLabel(blankIcon);
     this.framePanel = new JPanel();
     this.framePanel.setBackground(new Color(25, 25, 25));
-    this.framePanel.add(frameLabel);
-
-    ImageIcon tapestryIcon = new ImageIcon(tapestry.getTapestryImage());
-    JLabel tapestryLabel = new JLabel("", tapestryIcon, JLabel.CENTER);
+    this.framePanel.add(this.frameLabel);
+    
+    GridBagLayout tapeLayout = new GridBagLayout();
     this.tapestryPanel = new JPanel();
     this.tapestryPanel.setBackground(new Color(25, 25, 25));
-    this.tapestryPanel.add(tapestryLabel);
+    this.tapestryPanel.setLayout(tapeLayout);
+    GridBagConstraints tapeConstraints = new GridBagConstraints();
+    tapeConstraints.fill = GridBagConstraints.HORIZONTAL;
+    tapeConstraints.anchor = GridBagConstraints.LINE_START;
+    tapeConstraints.weightx = 0.5;
+    tapeConstraints.gridx = 0;
+    tapeConstraints.gridy = 0;
+    
+    this.topTapestry = new MyTapestry(argObj.getVideoPath());
+    this.midTapestry = new MyTapestry(argObj.getVideoPath());
+    this.bottomTapestry = new MyTapestry(argObj.getVideoPath());
+    this.isSeamCarvingBlend = argObj.isSeamCarvingBlend();
+    
+    this.videoPath = argObj.getVideoPath();
+    double topTapestryDistanceThreshold = 25.0;
+    if (this.videoPath.toLowerCase().equals("disney.rgb")) {
+      topTapestryDistanceThreshold = 25.0;
+    } else {
+      topTapestryDistanceThreshold = 32.0;
+    }
+
+    this.topTapestry.generateTapestry(0, video.getTotalFrames() - 1, topTapestryDistanceThreshold, 100);
+    this.topTapestry.blend(this.isSeamCarvingBlend);
+    this.topImage = topTapestry.getTapestryImage();
+    this.midImage = new BufferedImage(MyTapestry.KEYFRAME_WIDTH - 10, MyTapestry.KEYFRAME_HEIGHT, BufferedImage.TYPE_INT_RGB);
+    this.bottomImage = new BufferedImage(MyTapestry.KEYFRAME_WIDTH - 10, MyTapestry.KEYFRAME_HEIGHT, BufferedImage.TYPE_INT_RGB);
+    
+    this.tapestryLabel = new JLabel[3];
+    ImageIcon[] tapestryIcon = new ImageIcon[3];
+    tapestryIcon[0] = new ImageIcon(topImage);
+    tapestryLabel[0] = new JLabel("", tapestryIcon[0], JLabel.LEFT);
+    tapestryLabel[0].addMouseListener(this.new TopClickHandler());
+    this.tapestryPanel.add(tapestryLabel[0], tapeConstraints);
+    tapeConstraints.gridy++;
+    tapestryIcon[1] = new ImageIcon(midImage);
+    tapestryLabel[1] = new JLabel("", tapestryIcon[1], JLabel.LEFT);
+    tapestryLabel[1].addMouseListener(this.new MidClickHandler());
+    this.tapestryPanel.add(tapestryLabel[1], tapeConstraints);
+    tapeConstraints.gridy++;
+    tapestryIcon[2] = new ImageIcon(bottomImage);
+    tapestryLabel[2] = new JLabel("", tapestryIcon[2], JLabel.LEFT);
+    tapestryLabel[2].addMouseListener(this.new BottomClickHandler());
+    this.tapestryPanel.add(tapestryLabel[2], tapeConstraints);
     
     this.buttonPlayOrPause = new JButton("PLAY");
     this.buttonPlayOrPause.addActionListener(this.new ButtonHandler());
@@ -211,8 +395,6 @@ public class TapestryPlayer {
     constraints.gridy++;
     this.player.getContentPane().add(audioLabel, constraints);
     constraints.gridy++;
-    //this.player.getContentPane().add(tapestryLabel, constraints);
-    //constraints.gridy++;
     this.player.getContentPane().add(this.framePanel, constraints);
     constraints.gridx++;
     this.player.getContentPane().add(this.tapestryPanel, constraints);
@@ -229,7 +411,7 @@ public class TapestryPlayer {
   }
   
   
-  // Play/Resume the video from where it pauses
+  // Play/resume the video from where it pauses
   private void play() {
     if (this.isPlaying) {
       return;
@@ -313,7 +495,7 @@ public class TapestryPlayer {
     this.play();
     return;
   }
-  
+
   
   public void nonsense() {
     return;
@@ -327,16 +509,20 @@ class Arguments {
   
   private final String videoPath;
   private final String audioPath;
-  private final String tapestryPath;
+  private boolean isSeamCarving;
   
   public Arguments(String args[]) {
-    if (args.length < 3) {
-      System.out.println("Usage: java -jar TapestryPlayer.jar <Video> <Audio> <MyTapestry>");
+    if (args.length < 2) {
+      System.out.println("Usage: java -jar TapestryPlayer.jar <Video> <Audio> [-s]");
       System.exit(1);
     }
     this.videoPath = args[0];
     this.audioPath = args[1];
-    this.tapestryPath = args[2];
+    if (args.length > 2 && args[2].equals("-s")) {
+      this.isSeamCarving = true;
+    } else {
+      this.isSeamCarving = false;
+    }
     return;
   }
   
@@ -348,8 +534,8 @@ class Arguments {
     return this.audioPath;
   }
   
-  //public String getTapestryPath() {
-    //return this.tapestryPath;
-  //}
+  public boolean isSeamCarvingBlend() {
+    return this.isSeamCarving;
+  }
   
 }
